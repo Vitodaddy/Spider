@@ -10,6 +10,7 @@
 
 from sec_cik_mapper import StockMapper
 
+
 import random
 import re
 import undetected_chromedriver as uc
@@ -27,7 +28,9 @@ def download_excel(company_code,CIK,id,filing_date,reporting_date,document_type)
     urlpage = f'https://www.sec.gov/cgi-bin/viewer?action=view&cik={CIK}&accession_number={id}&xbrl_type=v'
 
     options = uc.ChromeOptions()
-    download_dir = r'C:\Users\Administrator\Desktop\SEC_Spider\sec-excel'
+    options.add_argument('--headless=new')
+
+    download_dir = '/Users/liurunsen/Documents/sec excel'
     options.add_experimental_option('prefs', {
         "download.default_directory": download_dir,
         "download.prompt_for_download": False,
@@ -42,7 +45,7 @@ def download_excel(company_code,CIK,id,filing_date,reporting_date,document_type)
     excel_button = driver.find_element("link text", 'View Excel Document')
     excel_button.click()
     
-    wait_for_download_to_complete(download_dir+r'\Financial_Report.xlsx')
+    wait_for_download_to_complete(download_dir+'/Financial_Report.xlsx')
     # 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000006/Financial_Report.xlsx'
     # Extract the link to the Excel document
     # soup = BeautifulSoup(driver.page_source, 'html.parser')
@@ -55,22 +58,34 @@ def download_excel(company_code,CIK,id,filing_date,reporting_date,document_type)
         quarter = 'FY'
     
     # Create filename
-    filename = f"{company_code}_{year}_{quarter}_{document_type}_{filing_date}_{reporting_date}.xlsx"
-    filename = filename.replace('/', '-').replace(' ','')  # Replace / in date with -
-    print(filename)
-    try:
-        old_file = os.path.join(download_dir, 'Financial_Report.xlsx')
-        new_file = os.path.join(download_dir, filename)
+    filename_xlsx = f"{company_code}_{year}_{quarter}_{document_type}_{filing_date}_{reporting_date}.xlsx"
+    filename_xls = f"{company_code}_{year}_{quarter}_{document_type}_{filing_date}_{reporting_date}.xls"
 
-        os.rename(old_file, new_file)
+    filename_xlsx = filename_xlsx.replace('/', '-').replace(' ','')  # Replace / in date with -
+    filename_xls = filename_xls.replace('/', '-').replace(' ','')  # Replace / in date with -
+
+    try:
+        if os.path.exists('/Users/liurunsen/Documents/sec excel/Financial_Report.xlsx'.strip()):
+            old_file = os.path.join(download_dir, 'Financial_Report.xlsx')
+            new_file = os.path.join(download_dir, filename_xlsx)
+            print(filename_xlsx)
+            os.rename(old_file, new_file)
+        else:
+            old_file = os.path.join(download_dir, 'Financial_Report.xls')
+            new_file = os.path.join(download_dir, filename_xls)
+            print(filename_xls)
+            os.rename(old_file, new_file)
     except:
         print('Someting went wrong during changing file name')
+    time.sleep(1)
     driver.quit()
 
 def get_report_list(report_url_list):
-    report_url_list = 'https://www.sec.gov/edgar/browse/?CIK=66740&owner=exclude'
-   
-    driver = uc.Chrome()
+    options = uc.ChromeOptions()
+    options.add_argument('--headless=new')
+
+    
+    driver = uc.Chrome(options=options)
     driver.get(report_url_list)
     time.sleep(5)
     
@@ -112,14 +127,17 @@ def wait_for_download_to_complete(filePath):
     """
     Wait for the download to complete.
     """
-    time_to_wait = 60
+    time_to_wait = 30
     counter = 0
 
-    while not os.path.exists(filePath):
+    while not os.path.exists(filePath.strip()):
         time.sleep(1)
         counter+=1
+        
         if(counter>time_to_wait):
             break
+    # print(f'Download time: {counter}')    
+    
         
 def cik_lookup(code):
     mapper = StockMapper()
@@ -127,7 +145,7 @@ def cik_lookup(code):
 
 def main():
     
-    sheet = pd.read_excel(io=r'C:\Users\Administrator\Desktop\SEC_Spider\VITO Company Tickers.xlsx')
+    sheet = pd.read_excel(io=r'/Users/liurunsen/Documents/VITO Company Tickers.xlsx')
     company_codes = sheet.iloc[:,1]
     
     for code in company_codes:
@@ -137,7 +155,7 @@ def main():
         info = get_report_list(url)
         for id,filing_date,reporting_date,document_type in info:
             download_excel(code,CIK,id,filing_date,reporting_date,document_type,)   
-            time.sleep(random.randint(4,7))
+            time.sleep(random.randint(2,5))
     
     
 if __name__ == '__main__':
