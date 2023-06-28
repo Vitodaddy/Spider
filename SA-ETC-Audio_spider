@@ -1,0 +1,178 @@
+import random
+import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.action_chains import ActionChains
+import pandas as pd
+import time
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+from fake_useragent import UserAgent
+import undetected_chromedriver as uc
+import re
+
+def get_company_website():
+    urls = []
+    sheet = pd.read_excel(io=r'C:\Users\Administrator\Desktop\SEC_Spider\VITO Company Tickers.xlsx')
+    company_codes = sheet.iloc[:,1]
+    for com in  company_codes:
+        urls.append((f'https://seekingalpha.com/symbol/{com}/earnings/transcripts',com))
+
+    return urls
+def get_button_href(url):
+
+    # Path to your chromedriver (update it according to your setup)
+    webdriver_service = Service('path/to/your/chromedriver')
+
+    #Generatge random user-agent
+
+    options=Options()
+    ua=UserAgent()
+    userAgent = ua.random
+    options.add_argument(f'user-agent={userAgent}')
+
+
+
+    # initiate the webdriver for Chrome browser
+    driver = uc.Chrome(options=options)
+
+    #Change viewport
+    #driver.set_window_size(100, 100)
+
+    # navigate to the target URL
+    driver.get(url)
+
+    # wait until the required buttons are loaded
+    wait = WebDriverWait(driver, 10)
+    
+    # list to hold the unique hrefs
+    hrefs = set()
+    hrefs_ordered = []
+    quarters=[]
+    years = []
+    audio = True
+    try:
+        while True:
+            time.sleep(5)
+
+            # find all buttons with the given text
+            buttons = wait.until(EC.presence_of_all_elements_located((By.XPATH, '//a[contains(text(), "Earnings Call Transcript")]')))
+            
+            new_hrefs_found = False
+
+            for button in buttons:
+                href = button.get_attribute('href')
+
+                if href not in hrefs:
+                    hrefs.add(href)
+                    hrefs_ordered.append(href)
+                    quarter = re.search(r'Q\d+',button.text)
+                    quarters.append(quarter)
+                    year = re.search(r'\d{4}',button.text)
+                    years.append(year)
+                    new_hrefs_found = True
+                    
+                    #print(f"Found new href: {href}")
+            
+            # if no new hrefs found, stop scrolling
+            if not new_hrefs_found:
+                break
+
+            # Scroll down
+            # driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+            # adding sleep to let the new content load
+            # time.sleep(random.randint(6,10))
+    except Exception as e:
+        print("An error occurred: access blocked", str(e))
+        audio =False
+        
+
+    # don't forget to close the driver
+    driver.quit()
+
+    return hrefs_ordered,quarters,years,audio
+    
+    
+
+
+def get_audio_id(hrefs):
+    audio_ids = []
+    for href in hrefs:
+        audio_ids.append(href[33:].split('-')[0])
+        
+    return audio_ids
+
+
+
+    
+def download_audio(url,company_code,quarter,year):
+    # print(quarter)
+    # print(type(year))
+    no_audio_left=False
+    # fileID=url.split('/')[-1]
+    correct_button_format = True
+    try:
+        filename = company_code + '_' + quarter.group(0) + '_' + year.group(0) + '_' + 'ECT.mp3'
+    except:
+        # the button text is not named in the format of what we want so skip it
+        print('Regular expression not found')
+        correct_button_format=False
+    
+    if  not correct_button_format:
+        return no_audio_left
+        
+
+    # send GET request
+    response = requests.get(url, stream=True)
+
+    # check if the request is successful
+    if response.status_code == 200:
+        # open the file in write-binary mode'
+        with open(filename, 'wb') as file:
+            # write the contents of the response to the file
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:
+                    file.write(chunk)
+        print(f"The MP3 file has been downloaded as {filename}.")
+    else:
+        no_audio_left=True
+        print(f"Failed to download the file. No audio for {filename}. Status code: {response.status_code}")
+        
+    return no_audio_left
+
+
+def main():
+    urls_codes_tuple = get_company_website()
+    for (url,company_code) in urls_codes_tuple:
+        # driver might crush
+        driver_connect = False
+        while not driver_connect:
+            try:
+                hrefs,quarters,years,audioPresent=get_button_href(url)
+                driver_connect = True
+            except:
+                print('Driver crushed, retry')
+        audio_ids = get_audio_id(hrefs)   
+        if audio_ids == [] :
+            continue
+        for i in range(len(audio_ids)):
+            base_url = f'https://static.seekingalpha.com/cdn/s3/transcripts_audio/{audio_ids[i]}.mp3'
+            no_audio_left = download_audio(base_url,company_code,quarters[i],years[i])
+            if no_audio_left:
+                break
+            #sleep before each download
+            time.sleep(random.randint(10,16))
+        # for id,quarter,year in audio_ids,quarters,years:
+        #     base_url = f'https://static.seekingalpha.com/cdn/s3/transcripts_audio/{id}.mp3'
+        #     download_audio(base_url,company_code,quarter,year)
+        #     #sleep before each download
+        #     time.sleep(random.randint(4,7))
+        
+
+    
+if __name__ == '__main__':
+    main()
